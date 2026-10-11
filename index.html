@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0b1120">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+  <title>Watchlist Chart Scanner &amp; Player</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --card: #151f32;
+      --border: #24324d;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --bull: #22c55e;
+      --bear: #ef4444;
+      --accent: #2563eb;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      overflow-x: hidden;
+      padding-bottom: 75px;
+    }
+
+    /* Header */
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 0.65rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 40;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+
+    .brand span.ticker-tag {
+      background: var(--accent);
+      color: #fff;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 0.35rem;
+    }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.45rem 0.65rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.3rem;
+      min-height: 34px;
+    }
+
+    button:active { transform: scale(0.97); }
+    .btn-secondary { background: #334155; }
+    .btn-emerald { background: #059669; }
+    .btn-purple { background: #7c3aed; }
+    .btn-danger { background: #dc2626; }
+
+    /* Settings Drawer */
+    .drawer {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 0.85rem 1rem;
+      display: none;
+      flex-direction: column;
+      gap: 0.65rem;
+      animation: slideDown 0.2s ease-out;
+    }
+
+    .drawer.open { display: flex; }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.5rem;
+    }
+
+    .input-box {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .input-box label {
+      font-size: 0.68rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    input, select {
+      background: #0b1120;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.35rem 0.55rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      height: 34px;
+    }
+
+    /* Watchlist Pills */
+    .watchlist-strip {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      overflow-x: auto;
+      padding: 0.45rem 0.75rem;
+      background: #111a2e;
+      border-bottom: 1px solid var(--border);
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .watchlist-strip::-webkit-scrollbar { display: none; }
+
+    .ticker-pill {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 0.22rem 0.6rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      min-height: auto;
+    }
+
+    .ticker-pill.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: #38bdf8;
+    }
+
+    /* Main Toolbar: Controls, Timeframe & Add Stock */
+    .player-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.45rem 0.75rem;
+      background: #0f172a;
+      border-bottom: 1px solid var(--border);
+      gap: 0.5rem;
+    }
+
+    .control-cluster {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+    }
+
+    .control-label {
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .compact-select {
+      height: 32px;
+      font-size: 0.76rem;
+      padding: 0 0.4rem;
+      background: #1e293b;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 5px;
+    }
+
+    .compact-input {
+      height: 32px;
+      font-size: 0.78rem;
+      padding: 0 0.45rem;
+      background: #1e293b;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 5px;
+      width: 75px;
+      text-transform: uppercase;
+    }
+
+    /* Chart Arena */
+    .chart-arena {
+      background: var(--card);
+      position: relative;
+      width: 100%;
+      height: 60vh;
+      min-height: 380px;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+
+    .chart-floating-bar {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      right: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+    }
+
+    .tools-group {
+      display: flex;
+      gap: 0.25rem;
+      background: rgba(11, 17, 32, 0.85);
+      backdrop-filter: blur(8px);
+      padding: 0.2rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      pointer-events: auto;
+    }
+
+    .tool-icon-btn {
+      min-height: 28px;
+      height: 28px;
+      width: 30px;
+      padding: 0;
+      background: transparent;
+      color: var(--muted);
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+
+    .tool-icon-btn.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    /* Status Bar */
+    #statusBadge {
+      font-size: 0.7rem;
+      color: var(--muted);
+      padding: 0.3rem 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #94a3b8; }
+
+    /* Sticky Bottom Sync Bar */
+    .mobile-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(21, 31, 50, 0.95);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid var(--border);
+      display: flex;
+      padding: 0.5rem 0.75rem;
+      gap: 0.5rem;
+      z-index: 50;
+      padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+    }
+
+    .mobile-bar button { flex: 1; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="brand">
+      <span>📊</span> Scan: <span class="ticker-tag" id="headerTicker">SPY</span>
+    </div>
+    <div class="header-actions">
+      <button id="toggleConfigBtn" class="btn-secondary" style="height:32px; font-size:0.75rem;">⚙️ Settings</button>
+      <button id="exportImageBtn" class="btn-purple" style="height:32px; font-size:0.75rem;">📸 Snap</button>
+    </div>
+  </header>
+
+  <!-- Collapsible Settings Drawer -->
+  <div class="drawer" id="configDrawer">
+    <div class="form-grid">
+      <div class="input-box">
+        <label>Alpaca API Key</label>
+        <input type="text" id="apiKey" placeholder="Key">
+      </div>
+      <div class="input-box">
+        <label>Alpaca Secret</label>
+        <input type="password" id="apiSecret" placeholder="Secret">
+      </div>
+      <div class="input-box">
+        <label>Fast / Slow EMA</label>
+        <div style="display:flex; gap:0.25rem;">
+          <input type="number" id="emaFast" value="9" style="width:50%;">
+          <input type="number" id="emaSlow" value="20" style="width:50%;">
+        </div>
+      </div>
+      <div class="input-box">
+        <label>Manage Watchlist</label>
+        <button id="removeSymbolBtn" class="btn-danger" style="width:100%; min-height:34px;">🗑️ Delete Active Stock</button>
+      </div>
+    </div>
+    <div style="display:flex; gap:0.5rem; margin-top:0.25rem;">
+      <button id="folderBtn" class="btn-secondary" style="flex:1;">📁 Connect Local Folder</button>
+    </div>
+  </div>
+
+  <!-- Watchlist Pill Carousel -->
+  <div class="watchlist-strip" id="watchlistPillStrip"></div>
+
+  <!-- Main Toolbar: Playback, Timeframe, Add Stock, Speed -->
+  <div class="player-bar">
+    <!-- Left: Navigation & Auto Play -->
+    <div class="control-cluster">
+      <button id="prevBtn" class="btn-secondary" style="height:32px; padding:0 0.5rem;">⏮</button>
+      <button id="playBtn" class="btn-emerald" style="height:32px; padding:0 0.65rem;">▶ Auto Play</button>
+      <button id="nextBtn" class="btn-secondary" style="height:32px; padding:0 0.5rem;">⏭</button>
+    </div>
+
+    <!-- Center-Left: Timeframe Dropdown (Relocated) -->
+    <div class="control-cluster">
+      <span class="control-label">TF:</span>
+      <select id="timeframe" class="compact-select">
+        <option value="5">5 Min</option>
+        <option value="10">10 Min</option>
+        <option value="15" selected>15 Min</option>
+        <option value="30">30 Min</option>
+      </select>
+    </div>
+
+    <!-- Center-Right: Add Stock Input & Button (Relocated) -->
+    <div class="control-cluster">
+      <input type="text" id="customSymbol" class="compact-input" placeholder="TICKER">
+      <button id="addSymbolBtn" style="height:32px; padding:0 0.55rem;">+ Add</button>
+    </div>
+
+    <!-- Right: Playback Speed -->
+    <div class="control-cluster">
+      <span class="control-label">Speed:</span>
+      <select id="playSpeed" class="compact-select">
+        <option value="1000">1s</option>
+        <option value="2000" selected>2s</option>
+        <option value="3000">3s</option>
+        <option value="5000">5s</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Status Info Strip -->
+  <div id="statusBadge"><div class="status-dot" id="statusDot"></div><span id="statusText">Ready</span></div>
+
+  <!-- Touch-Interactive Chart Canvas -->
+  <div class="chart-arena">
+    <div class="chart-floating-bar">
+      <div class="tools-group">
+        <button class="tool-icon-btn active" data-tool="pan">✋</button>
+        <button class="tool-icon-btn" data-tool="trendline">📏</button>
+        <button class="tool-icon-btn" data-tool="horizontal">➖</button>
+        <button class="tool-icon-btn" data-tool="measure">📐</button>
+        <button class="tool-icon-btn" id="clearDrawBtn" style="color:var(--bear);">🗑️</button>
+      </div>
+      <div class="tools-group">
+        <button class="tool-icon-btn" id="resetZoomBtn">⟲</button>
+      </div>
+    </div>
+    <canvas id="chart"></canvas>
+  </div>
+
+  <!-- Sticky Bottom Sync Action Bar -->
+  <div class="mobile-bar">
+    <button id="syncAllBtn" style="background:#2563eb;">📥 Sync Watchlist (10D)</button>
+  </div>
+
+  <script>
+    // --- 1. State & Storage ---
+    const KEY_STORAGE = 'alpaca_api_key';
+    const SECRET_STORAGE = 'alpaca_api_secret';
+    const WL_STORAGE = 'orb_watchlist_symbols';
+    const ACTIVE_STORAGE = 'orb_active_symbol';
+
+    const defaultWatchlist = ['SPY', 'QQQ', 'IWM', 'NVDA', 'TSLA', 'AAPL', 'MSFT', 'AMD', 'AMZN', 'META', 'NFLX ', ' NFLX ',' XOM' ,'JPM '];
+    let userWatchlist = [];
+
+    try {
+      userWatchlist = JSON.parse(localStorage.getItem(WL_STORAGE)) || defaultWatchlist;
+    } catch (e) {
+      userWatchlist = defaultWatchlist;
+    }
+
+    let activeSymbol = localStorage.getItem(ACTIVE_STORAGE) || userWatchlist[0];
+    if (!userWatchlist.includes(activeSymbol)) userWatchlist.unshift(activeSymbol);
+
+    const apiKeyInput = document.getElementById('apiKey');
+    const apiSecretInput = document.getElementById('apiSecret');
+
+    try {
+      apiKeyInput.value = localStorage.getItem(KEY_STORAGE) || '';
+      apiSecretInput.value = localStorage.getItem(SECRET_STORAGE) || '';
+    } catch (e) {}
+
+    function saveCreds() {
+      try {
+        localStorage.setItem(KEY_STORAGE, apiKeyInput.value.trim());
+        localStorage.setItem(SECRET_STORAGE, apiSecretInput.value.trim());
+      } catch (e) {}
+    }
+    apiKeyInput.addEventListener('input', saveCreds);
+    apiSecretInput.addEventListener('input', saveCreds);
+
+    function setStatus(msg, color = 'var(--muted)') {
+      document.getElementById('statusText').textContent = msg;
+      document.getElementById('statusDot').style.background = color;
+    }
+
+    // Render Watchlist Carousel
+    function renderWatchlistStrip() {
+      const strip = document.getElementById('watchlistPillStrip');
+      strip.innerHTML = userWatchlist.map(sym => `
+        <button class="ticker-pill ${sym === activeSymbol ? 'active' : ''}" data-symbol="${sym}">
+          ${sym}
+        </button>
+      `).join('');
+
+      document.getElementById('headerTicker').textContent = activeSymbol;
+
+      strip.querySelectorAll('.ticker-pill').forEach(pill => {
+        pill.addEventListener('click', (e) => {
+          stopAutoPlay();
+          selectSymbol(e.target.dataset.symbol);
+        });
+      });
+    }
+
+    function selectSymbol(sym) {
+      activeSymbol = sym.toUpperCase().trim();
+      localStorage.setItem(ACTIVE_STORAGE, activeSymbol);
+      renderWatchlistStrip();
+      loadAndRenderActiveChart();
+    }
+
+    // Add Symbol
+    document.getElementById('addSymbolBtn').addEventListener('click', () => {
+      const inp = document.getElementById('customSymbol');
+      const val = inp.value.toUpperCase().trim();
+      if (!val) return;
+      if (!userWatchlist.includes(val)) {
+        userWatchlist.push(val);
+        localStorage.setItem(WL_STORAGE, JSON.stringify(userWatchlist));
+      }
+      inp.value = '';
+      selectSymbol(val);
+    });
+
+    document.getElementById('customSymbol').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('addSymbolBtn').click();
+    });
+
+    // Remove Symbol
+    document.getElementById('removeSymbolBtn').addEventListener('click', () => {
+      if (userWatchlist.length <= 1) {
+        alert('Watchlist must have at least one stock.');
+        return;
+      }
+      userWatchlist = userWatchlist.filter(s => s !== activeSymbol);
+      localStorage.setItem(WL_STORAGE, JSON.stringify(userWatchlist));
+      selectSymbol(userWatchlist[0]);
+    });
+
+    renderWatchlistStrip();
+
+    // --- 2. Local Folder & In-Memory Storage ---
+    let localDirectoryHandle = null;
+    document.getElementById('folderBtn').addEventListener('click', async () => {
+      if ('showDirectoryPicker' in window) {
+        try {
+          localDirectoryHandle = await window.showDirectoryPicker();
+          document.getElementById('folderBtn').textContent = `📁 ${localDirectoryHandle.name}`;
+          setStatus(`Folder connected: ${localDirectoryHandle.name}`, '#38bdf8');
+        } catch (e) {}
+      } else {
+        alert('File System Access API supported on Chromium desktop browsers.');
+      }
+    });
+
+    async function readDisk(name) {
+      if (!localDirectoryHandle) return null;
+      try {
+        const fileHandle = await localDirectoryHandle.getFileHandle(name);
+        const file = await fileHandle.getFile();
+        return JSON.parse(await file.text());
+      } catch (e) { return null; }
+    }
+
+    async function writeDisk(name, data) {
+      if (!localDirectoryHandle) return;
+      try {
+        const fileHandle = await localDirectoryHandle.getFileHandle(name, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(data));
+        await writable.close();
+      } catch (e) {}
+    }
+
+    const memCache = {};
+
+    // --- 3. Alpaca 10-Day Historical Data Engine ---
+    async function fetch10DayBars(symbol, key, secret) {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - 10);
+
+      const filename = `${symbol}_5Min_10D.json`;
+      const diskData = await readDisk(filename);
+      if (diskData && diskData.length > 0) return diskData;
+      if (memCache[filename]) return memCache[filename];
+
+      let allBars = [];
+      let pageToken = null;
+      let pages = 0;
+
+      do {
+        pages++;
+        let url = `https://data.alpaca.markets/v2/stocks/${symbol}/bars?start=${start.toISOString()}&end=${end.toISOString()}&timeframe=5Min&feed=iex&adjustment=split&limit=10000`;
+        if (pageToken) url += `&page_token=${encodeURIComponent(pageToken)}`;
+
+        const res = await fetch(url, {
+          headers: { 'APCA-API-KEY-ID': key, 'APCA-API-SECRET-KEY': secret }
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.bars && data.bars.length > 0) allBars = allBars.concat(data.bars);
+        if (!data.next_page_token || data.next_page_token === pageToken) break;
+        pageToken = data.next_page_token;
+      } while (pageToken && pages < 10);
+
+      if (allBars.length === 0) throw new Error(`0 bars returned for ${symbol}`);
+
+      memCache[filename] = allBars;
+      await writeDisk(filename, allBars);
+      return allBars;
+    }
+
+    function aggregateBars(raw, targetMin) {
+      if (targetMin === 5) return raw.map(b => ({ ...b }));
+      const factor = targetMin / 5;
+      const aggregated = [];
+      const dayMap = {};
+
+      raw.forEach(b => {
+        const d = b.t.split('T')[0];
+        if (!dayMap[d]) dayMap[d] = [];
+        dayMap[d].push(b);
+      });
+
+      for (const day of Object.values(dayMap)) {
+        for (let i = 0; i < day.length; i += factor) {
+          const chunk = day.slice(i, i + factor);
+          if (chunk.length === 0) continue;
+          aggregated.push({
+            t: chunk[0].t,
+            o: chunk[0].o,
+            h: Math.max(...chunk.map(c => c.h)),
+            l: Math.min(...chunk.map(c => c.l)),
+            c: chunk[chunk.length - 1].c,
+            v: chunk.reduce((sum, c) => sum + c.v, 0)
+          });
+        }
+      }
+      return aggregated;
+    }
+
+    function calculateEMA(closes, period) {
+      const k = 2 / (period + 1);
+      const ema = [closes[0]];
+      for (let i = 1; i < closes.length; i++) {
+        ema.push(closes[i] * k + ema[i - 1] * (1 - k));
+      }
+      return ema;
+    }
+
+    function prepareChartData(bars, fastP, slowP, tfMin) {
+      const closes = bars.map(b => b.c);
+      const emaFast = calculateEMA(closes, fastP);
+      const emaSlow = calculateEMA(closes, slowP);
+
+      const dayMap = {};
+      bars.forEach((b, idx) => {
+        const dt = new Date(b.t);
+        const dateStr = dt.toISOString().split('T')[0];
+        if (!dayMap[dateStr]) dayMap[dateStr] = [];
+        dayMap[dateStr].push({
+          rawIdx: idx,
+          date: dateStr,
+          time: dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
+          open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v
+        });
+      });
+
+      const allCandles = [];
+      const daySessions = [];
+      const orbBarsCount = Math.max(1, Math.round(30 / tfMin));
+      let sessionIndex = 0;
+
+      for (const [dateStr, dayCandles] of Object.entries(dayMap)) {
+        if (dayCandles.length < orbBarsCount + 1) continue;
+        const startIndex = allCandles.length;
+
+        dayCandles.forEach(c => {
+          c.emaFast = emaFast[c.rawIdx];
+          c.emaSlow = emaSlow[c.rawIdx];
+          c.sessionIndex = sessionIndex;
+
+          if (c.emaFast > c.emaSlow) {
+            c.candleColor = c.close >= c.open ? '#22c55e' : '#15803d';
+          } else if (c.emaFast < c.emaSlow) {
+            c.candleColor = c.close <= c.open ? '#ef4444' : '#b91c1c';
+          } else {
+            c.candleColor = '#64748b';
+          }
+        });
+
+        const orbCandles = dayCandles.slice(0, orbBarsCount);
+        const orbHigh = Math.max(...orbCandles.map(c => c.high));
+        const orbLow = Math.min(...orbCandles.map(c => c.low));
+
+        dayCandles.forEach(c => {
+          c.orbHigh = orbHigh;
+          c.orbLow = orbLow;
+          allCandles.push(c);
+        });
+
+        daySessions.push({
+          date: dateStr,
+          sessionIndex: sessionIndex++,
+          startIndex: startIndex,
+          endIndex: allCandles.length - 1
+        });
+      }
+
+      return { candles: allCandles, sessions: daySessions };
+    }
+
+    // --- 4. Canvas Renderer ---
+    const canvas = document.getElementById('chart');
+    let chartPayload = null;
+
+    let chartState = {
+      startIndex: 0,
+      visibleCount: 90,
+      minVisible: 20,
+      maxVisible: 250,
+      activeTool: 'pan',
+      drawings: [],
+      currentDrawing: null,
+      isDragging: false,
+      dragStartX: 0,
+      dragStartIdx: 0,
+      initialPinchDist: 0,
+      initialVisibleCount: 0
+    };
+
+    function getBounds(cList) {
+      const rect = canvas.getBoundingClientRect();
+      const w = rect.width || 360;
+      const h = rect.height || 380;
+      const padLeft = 10, padRight = 55, padTop = 15, padBottom = 25;
+
+      let minP = Math.min(...cList.map(c => c.low));
+      let maxP = Math.max(...cList.map(c => c.high));
+      minP -= (maxP - minP) * 0.05;
+      maxP += (maxP - minP) * 0.05;
+
+      const chartW = w - padLeft - padRight;
+      const chartH = h - padTop - padBottom;
+      const stepX = chartW / cList.length;
+
+      return { w, h, padLeft, padRight, padTop, padBottom, minP, maxP, chartW, chartH, stepX };
+    }
+
+    function render() {
+      if (!chartPayload || chartPayload.candles.length === 0) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      const candles = chartPayload.candles;
+      const start = Math.max(0, Math.min(candles.length - chartState.visibleCount, chartState.startIndex));
+      const end = Math.min(candles.length, start + chartState.visibleCount);
+      const vCandles = candles.slice(start, end);
+
+      const b = getBounds(vCandles);
+      const getX = (i) => b.padLeft + i * b.stepX + b.stepX / 2;
+      const getY = (p) => b.padTop + b.chartH - ((p - b.minP) / (b.maxP - b.minP)) * b.chartH;
+
+      // 1. Session Shading
+      chartPayload.sessions.forEach(s => {
+        if (s.endIndex < start || s.startIndex >= end) return;
+        const x1 = b.padLeft + Math.max(0, s.startIndex - start) * b.stepX;
+        const x2 = b.padLeft + (Math.min(vCandles.length - 1, s.endIndex - start) + 1) * b.stepX;
+
+        if (s.sessionIndex % 2 === 1) {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
+          ctx.fillRect(x1, b.padTop, x2 - x1, b.chartH);
+        }
+        ctx.strokeStyle = '#1e293b';
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath();
+        ctx.moveTo(x1, b.padTop); ctx.lineTo(x1, b.padTop + b.chartH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
+
+      // 2. Grid Lines
+      ctx.strokeStyle = '#1e293b';
+      ctx.fillStyle = '#64748b';
+      ctx.font = '9px monospace';
+      for (let i = 0; i <= 4; i++) {
+        const val = b.minP + (i / 4) * (b.maxP - b.minP);
+        const y = getY(val);
+        ctx.beginPath();
+        ctx.moveTo(b.padLeft, y); ctx.lineTo(b.w - b.padRight, y); ctx.stroke();
+        ctx.fillText(val.toFixed(2), b.w - b.padRight + 4, y + 3);
+      }
+
+      // 3. EMA Cloud Ribbon
+      for (let i = 0; i < vCandles.length - 1; i++) {
+        const x1 = getX(i), x2 = getX(i + 1);
+        const yF1 = getY(vCandles[i].emaFast), yS1 = getY(vCandles[i].emaSlow);
+        const yF2 = getY(vCandles[i + 1].emaFast), yS2 = getY(vCandles[i + 1].emaSlow);
+        const isBull = vCandles[i].emaFast >= vCandles[i].emaSlow;
+
+        ctx.fillStyle = isBull ? 'rgba(34, 197, 94, 0.22)' : 'rgba(239, 68, 68, 0.22)';
+        ctx.beginPath();
+        ctx.moveTo(x1, yF1); ctx.lineTo(x2, yF2); ctx.lineTo(x2, yS2); ctx.lineTo(x1, yS1);
+        ctx.closePath(); ctx.fill();
+
+        ctx.strokeStyle = isBull ? 'rgba(34, 197, 94, 0.7)' : 'rgba(239, 68, 68, 0.7)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x1, yF1); ctx.lineTo(x2, yF2); ctx.stroke();
+      }
+
+      // 4. Candlesticks
+      const cW = Math.max(b.stepX * 0.65, 2);
+      vCandles.forEach((c, i) => {
+        const x = getX(i);
+        ctx.strokeStyle = c.candleColor;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(x, getY(c.high)); ctx.lineTo(x, getY(c.low));
+        ctx.stroke();
+
+        ctx.fillStyle = c.candleColor;
+        const yO = getY(c.open), yC = getY(c.close);
+        ctx.fillRect(x - cW / 2, Math.min(yO, yC), cW, Math.max(Math.abs(yO - yC), 1.5));
+      });
+
+      // 5. Drawings
+      const allD = [...chartState.drawings];
+      if (chartState.currentDrawing) allD.push(chartState.currentDrawing);
+
+      allD.forEach(d => {
+        if (d.type === 'horizontal') {
+          const y = getY(d.price);
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 3]);
+          ctx.beginPath();
+          ctx.moveTo(b.padLeft, y); ctx.lineTo(b.w - b.padRight, y); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = '#f59e0b';
+          ctx.font = 'bold 9px monospace';
+          ctx.fillText('$' + d.price.toFixed(2), b.w - b.padRight + 4, y + 3);
+        } else if (d.type === 'trendline') {
+          const x1 = b.padLeft + (d.startIdx - start + 0.5) * b.stepX;
+          const y1 = getY(d.startPrice);
+          const x2 = b.padLeft + (d.endIdx - start + 0.5) * b.stepX;
+          const y2 = getY(d.endPrice);
+
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        } else if (d.type === 'measure') {
+          const x1 = b.padLeft + (d.startIdx - start + 0.5) * b.stepX;
+          const y1 = getY(d.startPrice);
+          const x2 = b.padLeft + (d.endIdx - start + 0.5) * b.stepX;
+          const y2 = getY(d.endPrice);
+          const left = Math.min(x1, x2), top = Math.min(y1, y2);
+          const wBox = Math.abs(x2 - x1), hBox = Math.abs(y2 - y1);
+          const diff = d.endPrice - d.startPrice;
+          const pct = ((diff / d.startPrice) * 100).toFixed(2);
+
+          ctx.fillStyle = diff >= 0 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)';
+          ctx.fillRect(left, top, wBox, hBox);
+          ctx.strokeStyle = diff >= 0 ? '#22c55e' : '#ef4444';
+          ctx.strokeRect(left, top, wBox, hBox);
+
+          ctx.fillStyle = diff >= 0 ? '#22c55e' : '#ef4444';
+          ctx.font = 'bold 9px monospace';
+          ctx.fillText(`${diff >= 0 ? '+' : ''}$${diff.toFixed(2)} (${pct}%)`, left + 4, top - 4);
+        }
+      });
+    }
+
+    // Touch & Pointer Gesture Engine
+    function getTouchDist(e) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function screenToChart(clientX, clientY) {
+      if (!chartPayload) return null;
+      const rect = canvas.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+
+      const candles = chartPayload.candles;
+      const start = Math.max(0, Math.min(candles.length - chartState.visibleCount, chartState.startIndex));
+      const end = Math.min(candles.length, start + chartState.visibleCount);
+      const vCandles = candles.slice(start, end);
+      const b = getBounds(vCandles);
+
+      const price = b.maxP - ((y - b.padTop) / b.chartH) * (b.maxP - b.minP);
+      const relIdx = Math.floor((x - b.padLeft) / b.stepX);
+      const globalIdx = start + relIdx;
+      return { globalIdx, price };
+    }
+
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        chartState.initialPinchDist = getTouchDist(e);
+        chartState.initialVisibleCount = chartState.visibleCount;
+      } else if (e.touches.length === 1) {
+        const coords = screenToChart(e.touches[0].clientX, e.touches[0].clientY);
+        if (!coords) return;
+
+        if (chartState.activeTool === 'pan') {
+          chartState.isDragging = true;
+          chartState.dragStartX = e.touches[0].clientX;
+          chartState.dragStartIdx = chartState.startIndex;
+        } else if (chartState.activeTool === 'horizontal') {
+          chartState.drawings.push({ type: 'horizontal', price: coords.price });
+          requestAnimationFrame(render);
+        } else if (chartState.activeTool === 'trendline' || chartState.activeTool === 'measure') {
+          chartState.isDragging = true;
+          chartState.currentDrawing = {
+            type: chartState.activeTool,
+            startIdx: coords.globalIdx, startPrice: coords.price,
+            endIdx: coords.globalIdx, endPrice: coords.price
+          };
+        }
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (!chartPayload) return;
+
+      if (e.touches.length === 2 && chartState.initialPinchDist > 0) {
+        const dist = getTouchDist(e);
+        const ratio = chartState.initialPinchDist / dist;
+        const total = chartPayload.candles.length;
+        const newVisible = Math.max(chartState.minVisible, Math.min(chartState.maxVisible, Math.round(chartState.initialVisibleCount * ratio)));
+
+        chartState.startIndex = Math.max(0, Math.min(total - newVisible, chartState.startIndex + Math.floor((chartState.visibleCount - newVisible) / 2)));
+        chartState.visibleCount = newVisible;
+        requestAnimationFrame(render);
+      } else if (e.touches.length === 1 && chartState.isDragging) {
+        const clientX = e.touches[0].clientX;
+        const clientY = e.touches[0].clientY;
+
+        if (chartState.activeTool === 'pan') {
+          const dx = clientX - chartState.dragStartX;
+          const rect = canvas.getBoundingClientRect();
+          const stepW = (rect.width - 65) / chartState.visibleCount;
+          const shift = Math.round(dx / stepW);
+          const total = chartPayload.candles.length;
+
+          chartState.startIndex = Math.max(0, Math.min(total - chartState.visibleCount, chartState.dragStartIdx - shift));
+          requestAnimationFrame(render);
+        } else if (chartState.currentDrawing) {
+          const coords = screenToChart(clientX, clientY);
+          if (coords) {
+            chartState.currentDrawing.endIdx = coords.globalIdx;
+            chartState.currentDrawing.endPrice = coords.price;
+            requestAnimationFrame(render);
+          }
+        }
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', (e) => {
+      if (chartState.currentDrawing) {
+        chartState.drawings.push(chartState.currentDrawing);
+        chartState.currentDrawing = null;
+        requestAnimationFrame(render);
+      }
+      chartState.isDragging = false;
+      if (e.touches.length < 2) chartState.initialPinchDist = 0;
+    });
+
+    document.querySelectorAll('.tool-icon-btn[data-tool]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.tool-icon-btn').forEach(b => b.classList.remove('active'));
+        const target = e.currentTarget;
+        target.classList.add('active');
+        chartState.activeTool = target.dataset.tool;
+      });
+    });
+
+    document.getElementById('clearDrawBtn').addEventListener('click', () => {
+      chartState.drawings = [];
+      chartState.currentDrawing = null;
+      requestAnimationFrame(render);
+    });
+
+    document.getElementById('resetZoomBtn').addEventListener('click', () => {
+      if (!chartPayload) return;
+      chartState.visibleCount = 90;
+      chartState.startIndex = Math.max(0, chartPayload.candles.length - chartState.visibleCount);
+      requestAnimationFrame(render);
+    });
+
+    // --- 5. Data Orchestration & Play/Pause Controller ---
+    const allStockData = {};
+
+    async function loadAndRenderActiveChart() {
+      const key = apiKeyInput.value.trim();
+      const secret = apiSecretInput.value.trim();
+      const tf = parseInt(document.getElementById('timeframe').value, 10);
+      const eFast = parseInt(document.getElementById('emaFast').value, 10);
+      const eSlow = parseInt(document.getElementById('emaSlow').value, 10);
+
+      if (!key || !secret) {
+        document.getElementById('configDrawer').classList.add('open');
+        setStatus('Enter Alpaca API Credentials', 'var(--bear)');
+        return;
+      }
+
+      try {
+        let rawBars = allStockData[activeSymbol];
+        if (!rawBars) {
+          setStatus(`Loading 10D data for ${activeSymbol}...`, '#f59e0b');
+          rawBars = await fetch10DayBars(activeSymbol, key, secret);
+          allStockData[activeSymbol] = rawBars;
+        }
+
+        const aggregated = aggregateBars(rawBars, tf);
+        chartPayload = prepareChartData(aggregated, eFast, eSlow, tf);
+
+        chartState.visibleCount = Math.min(90, chartPayload.candles.length);
+        chartState.startIndex = Math.max(0, chartPayload.candles.length - chartState.visibleCount);
+
+        requestAnimationFrame(render);
+        setStatus(`${activeSymbol} Ready (${chartPayload.candles.length} bars)`, '#22c55e');
+      } catch (err) {
+        setStatus(`Error on ${activeSymbol}: ${err.message}`, 'var(--bear)');
+      }
+    }
+
+    // Batch Sync: Load 10-day data for ALL stocks in watchlist
+    async function syncEntireWatchlist() {
+      const key = apiKeyInput.value.trim();
+      const secret = apiSecretInput.value.trim();
+      if (!key || !secret) {
+        document.getElementById('configDrawer').classList.add('open');
+        setStatus('Enter API credentials to sync', 'var(--bear)');
+        return;
+      }
+
+      stopAutoPlay();
+      setStatus(`Syncing ${userWatchlist.length} stocks (10D)...`, '#f59e0b');
+
+      for (let i = 0; i < userWatchlist.length; i++) {
+        const sym = userWatchlist[i];
+        setStatus(`Syncing (${i + 1}/${userWatchlist.length}): ${sym}...`, '#f59e0b');
+        try {
+          allStockData[sym] = await fetch10DayBars(sym, key, secret);
+        } catch (e) {
+          console.warn(`Could not sync ${sym}:`, e);
+        }
+      }
+
+      setStatus(`Watchlist loaded! (${userWatchlist.length} stocks ready)`, '#22c55e');
+      loadAndRenderActiveChart();
+    }
+
+    // Playback Cycle Engine
+    let playIntervalId = null;
+
+    function stepNextSymbol() {
+      const currIdx = userWatchlist.indexOf(activeSymbol);
+      const nextIdx = (currIdx + 1) % userWatchlist.length;
+      selectSymbol(userWatchlist[nextIdx]);
+    }
+
+    function stepPrevSymbol() {
+      const currIdx = userWatchlist.indexOf(activeSymbol);
+      const prevIdx = (currIdx - 1 + userWatchlist.length) % userWatchlist.length;
+      selectSymbol(userWatchlist[prevIdx]);
+    }
+
+    function toggleAutoPlay() {
+      if (playIntervalId) {
+        stopAutoPlay();
+      } else {
+        startAutoPlay();
+      }
+    }
+
+    function startAutoPlay() {
+      const speed = parseInt(document.getElementById('playSpeed').value, 10);
+      const btn = document.getElementById('playBtn');
+      btn.textContent = '⏸ Pause';
+      btn.style.background = '#eab308';
+      playIntervalId = setInterval(stepNextSymbol, speed);
+      setStatus(`Auto-play active (${speed / 1000}s interval)`, '#38bdf8');
+    }
+
+    function stopAutoPlay() {
+      if (playIntervalId) {
+        clearInterval(playIntervalId);
+        playIntervalId = null;
+        const btn = document.getElementById('playBtn');
+        btn.textContent = '▶ Auto Play';
+        btn.style.background = '#059669';
+        setStatus('Auto-play paused', 'var(--muted)');
+      }
+    }
+
+    // Event Bindings
+    document.getElementById('syncAllBtn').addEventListener('click', syncEntireWatchlist);
+    document.getElementById('playBtn').addEventListener('click', toggleAutoPlay);
+    document.getElementById('nextBtn').addEventListener('click', () => { stopAutoPlay(); stepNextSymbol(); });
+    document.getElementById('prevBtn').addEventListener('click', () => { stopAutoPlay(); stepPrevSymbol(); });
+
+    document.getElementById('playSpeed').addEventListener('change', () => {
+      if (playIntervalId) {
+        stopAutoPlay();
+        startAutoPlay();
+      }
+    });
+
+    document.getElementById('timeframe').addEventListener('change', loadAndRenderActiveChart);
+    document.getElementById('emaFast').addEventListener('change', loadAndRenderActiveChart);
+    document.getElementById('emaSlow').addEventListener('change', loadAndRenderActiveChart);
+
+    document.getElementById('toggleConfigBtn').addEventListener('click', () => {
+      document.getElementById('configDrawer').classList.toggle('open');
+    });
+
+    // Image Snapshot
+    document.getElementById('exportImageBtn').addEventListener('click', () => {
+      if (!chartPayload) return;
+      const offscreen = document.createElement('canvas');
+      offscreen.width = canvas.width;
+      offscreen.height = canvas.height;
+      const oCtx = offscreen.getContext('2d');
+      oCtx.drawImage(canvas, 0, 0);
+
+      oCtx.fillStyle = 'rgba(11, 17, 32, 0.85)';
+      oCtx.fillRect(10, 10, 200, 26);
+      oCtx.fillStyle = '#38bdf8';
+      oCtx.font = 'bold 11px sans-serif';
+      const tf = document.getElementById('timeframe').value;
+      oCtx.fillText(`${activeSymbol} • ${tf}m Scanner`, 18, 27);
+
+      const link = document.createElement('a');
+      link.download = `${activeSymbol}_${tf}m_10D_Scan.png`;
+      link.href = offscreen.toDataURL('image/png');
+      link.click();
+    });
+
+    window.addEventListener('resize', () => {
+      if (chartPayload) requestAnimationFrame(render);
+    });
+
+    if (apiKeyInput.value && apiSecretInput.value) {
+      loadAndRenderActiveChart();
+    }
+  </script>
+</body>
+</html>
