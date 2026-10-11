@@ -345,6 +345,41 @@
         <button id="removeSymbolBtn" class="btn-danger" style="width:100%; min-height:34px;">🗑️ Delete Active Stock</button>
       </div>
     </div>
+    <div class="form-grid" style="margin-top:0.25rem;">
+      <div class="input-box">
+        <label>Trendlines: Pivot Strength</label>
+        <input type="number" id="tlPivot" min="1" max="100" value="5">
+      </div>
+      <div class="input-box">
+        <label>Candles To Cross (invalidate)</label>
+        <input type="number" id="tlCross" min="1" max="50" value="3">
+      </div>
+      <div class="input-box">
+        <label>Max Resistance / Support Lines</label>
+        <div style="display:flex; gap:0.25rem;">
+          <input type="number" id="tlMaxRes" min="1" max="10" value="2" style="width:50%;">
+          <input type="number" id="tlMaxSup" min="1" max="10" value="2" style="width:50%;">
+        </div>
+      </div>
+      <div class="input-box">
+        <label>Max Lines Per Pivot A / B</label>
+        <div style="display:flex; gap:0.25rem;">
+          <input type="number" id="tlPerA" min="1" max="10" value="1" style="width:50%;">
+          <input type="number" id="tlPerB" min="1" max="10" value="1" style="width:50%;">
+        </div>
+      </div>
+      <div class="input-box">
+        <label>Max Drawing Distance (bars)</label>
+        <input type="number" id="tlDist" min="50" max="5000" value="500">
+      </div>
+      <div class="input-box">
+        <label>Line Preference</label>
+        <select id="tlPref">
+          <option value="Newest">Newest</option>
+          <option value="Oldest">Oldest</option>
+        </select>
+      </div>
+    </div>
     <div style="display:flex; gap:0.5rem; margin-top:0.25rem;">
       <button id="folderBtn" class="btn-secondary" style="flex:1;">📁 Connect Local Folder</button>
     </div>
@@ -405,7 +440,10 @@
         <button class="tool-icon-btn" id="clearDrawBtn" style="color:var(--bear);">🗑️</button>
       </div>
       <div class="tools-group">
-        <button class="tool-icon-btn" id="resetZoomBtn">⟲</button>
+        <button class="tool-icon-btn active" id="tlToggleBtn" title="Auto Trend Lines">〽️</button>
+        <button class="tool-icon-btn" id="zoomInBtn" title="Zoom in">＋</button>
+        <button class="tool-icon-btn" id="zoomOutBtn" title="Zoom out">－</button>
+        <button class="tool-icon-btn" id="resetZoomBtn" title="Reset to 5 days">⟲</button>
       </div>
     </div>
     <canvas id="chart"></canvas>
@@ -690,7 +728,142 @@
       return { candles: allCandles, sessions: daySessions };
     }
 
+    // --- 3b. Auto Trend Lines (port of "Simple Auto Trend Lines" Pine indicator) ---
+    const TL_STORAGE = 'auto_trendline_settings';
+    const TL_COLORS = { res: '#ef4444', sup: '#22c55e', resDot: '#d946ef', supDot: '#22d3ee' };
+    const TL_RECENT_LOOKBACK = 1000;
+    const tlDefaults = { enabled: true, pivot: 5, cross: 3, maxDist: 500, perA: 1, perB: 1, maxRes: 2, maxSup: 2, pref: 'Newest' };
+    let tlSettings = { ...tlDefaults };
+    try { tlSettings = { ...tlDefaults, ...(JSON.parse(localStorage.getItem(TL_STORAGE)) || {}) }; } catch (e) {}
+
+    // Pivot detection (matches ta.pivothigh / ta.pivotlow: left bars <=, right bars <).
+    // `ok` = pivot is a higher/lower high (or low) vs. the previous same-type pivot.
+    function findPivots(candles, strength) {
+      const highs = [], lows = [];
+      let prevH = null, prevL = null;
+      for (let i = strength; i < candles.length - strength; i++) {
+        const h = candles[i].high, l = candles[i].low;
+        let isH = true, isL = true;
+        for (let k = 1; k <= strength; k++) {
+          if (candles[i - k].high > h || candles[i + k].high >= h) isH = false;
+          if (candles[i - k].low < l || candles[i + k].low <= l) isL = false;
+          if (!isH && !isL) break;
+        }
+        if (isH) { highs.push({ bar: i, val: h, ok: prevH !== null && h !== prevH }); prevH = h; }
+        if (isL) { lows.push({ bar: i, val: l, ok: prevL !== null && l !== prevL }); prevL = l; }
+      }
+      return { highs, lows };
+    }
+
+    function tlLinesIntersect(a, e) {
+      const s1 = (a.val2 - a.val1) / (a.bar2 - a.bar1);
+      const s2 = (e.val2 - e.val1) / (e.bar2 - e.bar1);
+      if (Math.abs(s1 - s2) < 1e-7) return false;
+      const i1 = a.val1 - s1 * a.bar1;
+      const i2 = e.val1 - s2 * e.bar1;
+      const crossBar = (i2 - i1) / (s1 - s2);
+      return crossBar >= Math.max(a.bar2, e.bar2);
+    }
+
+    function buildTrendCandidates(candles, pivots, type, o) {
+      const last = candles.length - 1;
+      const out = [];
+      for (let j = pivots.length - 1; j >= 1; j--) {
+        const pj = pivots[j];
+        if (last - pj.bar > TL_RECENT_LOOKBACK) continue;
+        for (let i = j - 1; i >= 0; i--) {
+          const pi = pivots[i];
+          if (pj.bar - pi.bar > o.maxDist) break;
+          if (!(pi.ok && pj.ok)) continue;
+          if (type === 'res' ? !(pj.val < pi.val) : !(pj.val > pi.val)) continue;
+          if (last - pi.bar > TL_RECENT_LOOKBACK) continue;
+
+          const slope = (pj.val - pi.val) / (pj.bar - pi.bar);
+          const lineAt = (bar) => pi.val + slope * (bar - pi.bar);
+
+          // Valid: no highs above (resistance) / lows below (support) between the pivots
+          let valid = true;
+          for (let b = pi.bar + 1; b < pj.bar; b++) {
+            const lv = lineAt(b);
+            if (type === 'res' ? candles[b].high > lv : candles[b].low < lv) { valid = false; break; }
+          }
+          if (!valid) continue;
+
+          // Invalidated if N consecutive candles close OR open through the line
+          let run = 0, maxRun = 0;
+          const mMax = Math.min(o.maxDist, last);
+          for (let m = 0; m <= mMax; m++) {
+            const c = candles[last - m];
+            const lv = lineAt(last - m);
+            const through = type === 'res' ? (c.close > lv || c.open > lv) : (c.close < lv || c.open < lv);
+            if (through) { run++; if (run > maxRun) maxRun = run; } else run = 0;
+          }
+          if (maxRun >= o.cross) continue;
+
+          out.push({ type, i, j, bar1: pi.bar, val1: pi.val, bar2: pj.bar, val2: pj.val });
+        }
+      }
+      return out; // ordered newest end-pivot first
+    }
+
+    function selectTrendLines(cands, o, maxLines) {
+      const aCount = new Map(), bCount = new Map();
+      const selected = [];
+      const N = cands.length;
+      for (let off = 0; off < N; off++) {
+        const c = cands[o.pref === 'Oldest' ? N - 1 - off : off];
+        if ((aCount.get(c.i) || 0) >= o.perA) continue;
+        if ((bCount.get(c.j) || 0) >= o.perB) continue;
+
+        let skip = false;
+        for (let s = selected.length - 1; s >= 0; s--) {
+          const e = selected[s];
+          if (e.bar1 === c.bar1 && e.val1 === c.val1 && e.bar2 === c.bar2 && e.val2 === c.val2) { skip = true; break; }
+          if (tlLinesIntersect(c, e)) {
+            const older = c.bar1 < e.bar1 || (c.bar1 === e.bar1 && c.bar2 < e.bar2);
+            if (older) {
+              aCount.set(e.i, Math.max(0, (aCount.get(e.i) || 0) - 1));
+              bCount.set(e.j, Math.max(0, (bCount.get(e.j) || 0) - 1));
+              selected.splice(s, 1);
+              break;
+            } else { skip = true; break; }
+          }
+        }
+        if (!skip && selected.length < maxLines) {
+          aCount.set(c.i, (aCount.get(c.i) || 0) + 1);
+          bCount.set(c.j, (bCount.get(c.j) || 0) + 1);
+          selected.push(c);
+        }
+      }
+      return selected;
+    }
+
+    function computeAutoTrendlines(candles, o) {
+      if (!candles || candles.length < o.pivot * 2 + 2) return [];
+      const { highs, lows } = findPivots(candles, o.pivot);
+      const res = selectTrendLines(buildTrendCandidates(candles, highs, 'res', o), o, o.maxRes);
+      const sup = selectTrendLines(buildTrendCandidates(candles, lows, 'sup', o), o, o.maxSup);
+      return [...res, ...sup];
+    }
+
+    function recomputeTrendlines() {
+      if (!chartPayload) return;
+      chartPayload.trendlines = tlSettings.enabled ? computeAutoTrendlines(chartPayload.candles, tlSettings) : [];
+    }
+
+    function saveTlSettings() {
+      try { localStorage.setItem(TL_STORAGE, JSON.stringify(tlSettings)); } catch (e) {}
+    }
+
     // --- 4. Canvas Renderer ---
+    // Distinct faint tint per trading day (cycles)
+    const DAY_SHADES = [
+      'rgba(59, 130, 246, 0.09)',
+      'rgba(168, 85, 247, 0.09)',
+      'rgba(20, 184, 166, 0.09)',
+      'rgba(245, 158, 11, 0.09)',
+      'rgba(236, 72, 153, 0.09)'
+    ];
     const canvas = document.getElementById('chart');
     let chartPayload = null;
 
@@ -753,9 +926,12 @@
         const x1 = b.padLeft + Math.max(0, s.startIndex - start) * b.stepX;
         const x2 = b.padLeft + (Math.min(vCandles.length - 1, s.endIndex - start) + 1) * b.stepX;
 
-        if (s.sessionIndex % 2 === 1) {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
-          ctx.fillRect(x1, b.padTop, x2 - x1, b.chartH);
+        ctx.fillStyle = DAY_SHADES[s.sessionIndex % DAY_SHADES.length];
+        ctx.fillRect(x1, b.padTop, x2 - x1, b.chartH);
+        if (x2 - x1 > 28) {
+          ctx.fillStyle = 'rgba(148, 163, 184, 0.75)';
+          ctx.font = '9px monospace';
+          ctx.fillText(s.date.slice(5), x1 + 3, b.padTop + 9);
         }
         ctx.strokeStyle = '#1e293b';
         ctx.setLineDash([2, 3]);
@@ -808,6 +984,34 @@
         const yO = getY(c.open), yC = getY(c.close);
         ctx.fillRect(x - cW / 2, Math.min(yO, yC), cW, Math.max(Math.abs(yO - yC), 1.5));
       });
+
+      // 4b. Auto Trend Lines
+      if (tlSettings.enabled && chartPayload.trendlines && chartPayload.trendlines.length) {
+        const xAt = (g) => b.padLeft + (g - start + 0.5) * b.stepX;
+        const gRight = end + 2; // extend right past the last visible bar
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(b.padLeft, b.padTop, b.chartW, b.chartH);
+        ctx.clip();
+        chartPayload.trendlines.forEach(tl => {
+          const slope = (tl.val2 - tl.val1) / (tl.bar2 - tl.bar1);
+          const yEnd = tl.val1 + slope * (gRight - tl.bar1);
+          ctx.strokeStyle = tl.type === 'res' ? TL_COLORS.res : TL_COLORS.sup;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(xAt(tl.bar1), getY(tl.val1));
+          ctx.lineTo(xAt(gRight), getY(yEnd));
+          ctx.stroke();
+
+          ctx.fillStyle = tl.type === 'res' ? TL_COLORS.resDot : TL_COLORS.supDot;
+          [[tl.bar1, tl.val1], [tl.bar2, tl.val2]].forEach(([g, v]) => {
+            ctx.beginPath();
+            ctx.arc(xAt(g), getY(v), 3.5, 0, Math.PI * 2);
+            ctx.fill();
+          });
+        });
+        ctx.restore();
+      }
 
       // 5. Drawings
       const allD = [...chartState.drawings];
@@ -956,7 +1160,7 @@
 
     document.querySelectorAll('.tool-icon-btn[data-tool]').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        document.querySelectorAll('.tool-icon-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tool-icon-btn[data-tool]').forEach(b => b.classList.remove('active'));
         const target = e.currentTarget;
         target.classList.add('active');
         chartState.activeTool = target.dataset.tool;
@@ -971,10 +1175,34 @@
 
     document.getElementById('resetZoomBtn').addEventListener('click', () => {
       if (!chartPayload) return;
-      chartState.visibleCount = 90;
-      chartState.startIndex = Math.max(0, chartPayload.candles.length - chartState.visibleCount);
+      showLastDays(5);
       requestAnimationFrame(render);
     });
+
+    // Show the last N trading sessions regardless of timeframe
+    function showLastDays(nDays) {
+      if (!chartPayload || !chartPayload.candles.length) return;
+      const total = chartPayload.candles.length;
+      const sess = chartPayload.sessions;
+      const n = Math.min(nDays, sess.length);
+      const first = sess[sess.length - n].startIndex;
+      chartState.maxVisible = total;
+      chartState.visibleCount = Math.max(1, total - first);
+      chartState.startIndex = first;
+    }
+
+    function zoomBy(factor) {
+      if (!chartPayload) return;
+      const total = chartPayload.candles.length;
+      const old = chartState.visibleCount;
+      const next = Math.max(Math.min(chartState.minVisible, total), Math.min(total, Math.round(old * factor)));
+      const atEnd = chartState.startIndex + old >= total - 1;
+      // keep right edge pinned if already at latest bar, otherwise zoom around centre
+      chartState.startIndex = atEnd ? total - next : chartState.startIndex + Math.round((old - next) / 2);
+      chartState.startIndex = Math.max(0, Math.min(total - next, chartState.startIndex));
+      chartState.visibleCount = next;
+      requestAnimationFrame(render);
+    }
 
     // --- 5. Data Orchestration & Play/Pause Controller ---
     const allStockData = {};
@@ -1002,9 +1230,9 @@
 
         const aggregated = aggregateBars(rawBars, tf);
         chartPayload = prepareChartData(aggregated, eFast, eSlow, tf);
+        recomputeTrendlines();
 
-        chartState.visibleCount = Math.min(90, chartPayload.candles.length);
-        chartState.startIndex = Math.max(0, chartPayload.candles.length - chartState.visibleCount);
+        showLastDays(5);
 
         requestAnimationFrame(render);
         setStatus(`${activeSymbol} Ready (${chartPayload.candles.length} bars)`, '#22c55e');
@@ -1102,6 +1330,42 @@
 
     document.getElementById('toggleConfigBtn').addEventListener('click', () => {
       document.getElementById('configDrawer').classList.toggle('open');
+    });
+
+    document.getElementById('zoomInBtn').addEventListener('click', () => zoomBy(0.7));
+    document.getElementById('zoomOutBtn').addEventListener('click', () => zoomBy(1 / 0.7));
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      zoomBy(e.deltaY < 0 ? 0.85 : 1 / 0.85);
+    }, { passive: false });
+
+    // Auto Trend Line controls
+    const tlInputs = {
+      pivot: ['tlPivot', 1, 100], cross: ['tlCross', 1, 50], maxRes: ['tlMaxRes', 1, 10], maxSup: ['tlMaxSup', 1, 10],
+      perA: ['tlPerA', 1, 10], perB: ['tlPerB', 1, 10], maxDist: ['tlDist', 50, 5000]
+    };
+    Object.entries(tlInputs).forEach(([key, [id, min, max]]) => {
+      const el = document.getElementById(id);
+      el.value = tlSettings[key];
+      el.addEventListener('change', () => {
+        const v = parseInt(el.value, 10);
+        tlSettings[key] = Number.isFinite(v) ? Math.max(min, Math.min(max, v)) : tlDefaults[key];
+        el.value = tlSettings[key];
+        saveTlSettings(); recomputeTrendlines(); requestAnimationFrame(render);
+      });
+    });
+    const tlPrefEl = document.getElementById('tlPref');
+    tlPrefEl.value = tlSettings.pref;
+    tlPrefEl.addEventListener('change', () => {
+      tlSettings.pref = tlPrefEl.value;
+      saveTlSettings(); recomputeTrendlines(); requestAnimationFrame(render);
+    });
+    const tlToggleBtn = document.getElementById('tlToggleBtn');
+    tlToggleBtn.classList.toggle('active', tlSettings.enabled);
+    tlToggleBtn.addEventListener('click', () => {
+      tlSettings.enabled = !tlSettings.enabled;
+      tlToggleBtn.classList.toggle('active', tlSettings.enabled);
+      saveTlSettings(); recomputeTrendlines(); requestAnimationFrame(render);
     });
 
     // Image Snapshot
